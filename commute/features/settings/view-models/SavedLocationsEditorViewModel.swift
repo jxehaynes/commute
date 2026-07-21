@@ -4,152 +4,93 @@ import SwiftUI
 
 @MainActor
 final class SavedLocationsEditorViewModel: ObservableObject {
-    @Published var homeAddress = ""
-    @Published var workAddress = ""
-    @Published var otherName = ""
-    @Published var otherAddress = ""
+    @Published var locations: [SavedLocation] = []
+    @Published var editingLocationID: UUID?
 
-    private var homeLocation: SavedLocation?
-    private var workLocation: SavedLocation?
-    private var otherLocation: SavedLocation?
+    /// Frozen copies for editor bindings while a sheet is tearing down after delete.
+    private var staleEditingLocations: [UUID: SavedLocation] = [:]
 
-    func load(from locations: [SavedLocation]) {
-        homeAddress = ""
-        workAddress = ""
-        otherName = ""
-        otherAddress = ""
-        homeLocation = nil
-        workLocation = nil
-        otherLocation = nil
+    func load(from saved: [SavedLocation]) {
+        staleEditingLocations.removeAll()
+        editingLocationID = nil
 
-        for location in locations {
-            switch location.label {
-            case .home:
-                homeLocation = location
-                homeAddress = location.address
-            case .work:
-                workLocation = location
-                workAddress = location.address
-            case .other:
-                otherLocation = location
-                otherAddress = location.address
-                otherName = location.customName ?? ""
-            }
+        var home = saved.first(where: { $0.label == .home })
+        var work = saved.first(where: { $0.label == .work })
+        let extras = saved.filter { $0.label == .other }
+
+        if home == nil {
+            home = SavedLocation.mock(label: .home, address: "")
         }
+        if work == nil {
+            work = SavedLocation.mock(label: .work, customName: "Work", address: "")
+        }
+
+        locations = [home, work].compactMap { $0 } + extras
+    }
+
+    func binding(for id: UUID) -> Binding<SavedLocation>? {
+        guard locations.contains(where: { $0.id == id })
+            || staleEditingLocations[id] != nil else { return nil }
+
+        return Binding(
+            get: {
+                if let index = self.locations.firstIndex(where: { $0.id == id }) {
+                    return self.locations[index]
+                }
+                return self.staleEditingLocations[id]
+                    ?? SavedLocation.mock(label: .other, customName: "Place", address: "")
+            },
+            set: { newValue in
+                guard let index = self.locations.firstIndex(where: { $0.id == id }) else { return }
+                self.locations[index] = newValue
+            }
+        )
+    }
+
+    func clearStaleEditingLocations() {
+        staleEditingLocations.removeAll()
+    }
+
+    func addExtra() {
+        let place = SavedLocation(
+            label: .other,
+            customName: "New place",
+            address: "",
+            coordinate: SavedLocation.mock(label: .other).coordinate
+        )
+        locations.append(place)
+        editingLocationID = place.id
+    }
+
+    func deleteExtra(id: UUID) {
+        if let location = locations.first(where: { $0.id == id }) {
+            staleEditingLocations[id] = location
+        }
+        if editingLocationID == id {
+            editingLocationID = nil
+        }
+        locations.removeAll { $0.id == id && $0.label == .other }
+    }
+
+    func canDelete(_ location: SavedLocation) -> Bool {
+        location.label == .other
     }
 
     func buildLocations() -> [SavedLocation] {
-        commitLocationEdits()
-        var locations: [SavedLocation] = []
-        if !homeAddress.trimmingCharacters(in: .whitespaces).isEmpty, let home = homeLocation {
-            locations.append(home)
-        }
-        if !workAddress.trimmingCharacters(in: .whitespaces).isEmpty, let work = workLocation {
-            locations.append(work)
-        }
-        if !otherAddress.trimmingCharacters(in: .whitespaces).isEmpty, let other = otherLocation {
-            locations.append(other)
-        }
-        return locations
+        locations.filter { !$0.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
-    func selectLocation(_ result: ResolvedLocationSearchResult, label: SavedLocation.LocationLabel) {
-        let customName: String?
-        switch label {
-        case .home:
-            homeAddress = result.formattedAddress
-            customName = nil
-        case .work:
-            workAddress = result.formattedAddress
-            customName = "Work"
-        case .other:
-            otherAddress = result.formattedAddress
-            customName = resolvedOtherName
-        }
-
-        let location = SavedLocation(
-            id: existingID(for: label) ?? UUID(),
-            label: label,
-            customName: customName,
-            address: result.formattedAddress,
-            coordinate: result.coordinate,
-            naptanId: nil,
-            routingCoordinate: nil
-        )
-
-        setLocation(location)
+    var homeBinding: Binding<SavedLocation>? {
+        guard let home = locations.first(where: { $0.label == .home }) else { return nil }
+        return binding(for: home.id)
     }
 
-    private func commitLocationEdits() {
-        if !homeAddress.trimmingCharacters(in: .whitespaces).isEmpty {
-            if homeLocation?.address != homeAddress {
-                homeLocation = savedLocation(
-                    label: .home,
-                    address: homeAddress,
-                    existing: homeLocation
-                )
-            }
-        }
-        if !workAddress.trimmingCharacters(in: .whitespaces).isEmpty {
-            if workLocation?.address != workAddress {
-                workLocation = savedLocation(
-                    label: .work,
-                    customName: "Work",
-                    address: workAddress,
-                    existing: workLocation
-                )
-            }
-        }
-        if !otherAddress.trimmingCharacters(in: .whitespaces).isEmpty {
-            if otherLocation?.address != otherAddress || otherLocation?.customName != resolvedOtherName {
-                otherLocation = savedLocation(
-                    label: .other,
-                    customName: resolvedOtherName,
-                    address: otherAddress,
-                    existing: otherLocation
-                )
-            }
-        }
+    var workBinding: Binding<SavedLocation>? {
+        guard let work = locations.first(where: { $0.label == .work }) else { return nil }
+        return binding(for: work.id)
     }
 
-    private func savedLocation(
-        label: SavedLocation.LocationLabel,
-        customName: String? = nil,
-        address: String,
-        existing: SavedLocation?
-    ) -> SavedLocation {
-        let mock = SavedLocation.mock(label: label, customName: customName, address: address)
-        return SavedLocation(
-            id: existing?.id ?? UUID(),
-            label: label,
-            customName: customName,
-            address: address,
-            coordinate: existing?.address == address ? (existing?.coordinate ?? mock.coordinate) : mock.coordinate,
-            naptanId: existing?.address == address ? existing?.naptanId : nil,
-            routingCoordinate: existing?.address == address ? existing?.routingCoordinate : nil
-        )
-    }
-
-    private func existingID(for label: SavedLocation.LocationLabel) -> UUID? {
-        switch label {
-        case .home: homeLocation?.id
-        case .work: workLocation?.id
-        case .other: otherLocation?.id
-        }
-    }
-
-    private func setLocation(_ location: SavedLocation) {
-        switch location.label {
-        case .home:
-            homeLocation = location
-        case .work:
-            workLocation = location
-        case .other:
-            otherLocation = location
-        }
-    }
-
-    private var resolvedOtherName: String {
-        otherName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Other" : otherName
+    var extraLocations: [SavedLocation] {
+        locations.filter { $0.label == .other }
     }
 }

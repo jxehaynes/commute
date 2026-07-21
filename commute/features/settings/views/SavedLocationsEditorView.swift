@@ -18,40 +18,12 @@ struct SavedLocationsEditorView: View {
                             centered: false
                         )
                         OnboardingSubheadline(
-                            text: "Update Home and Work, or add another place you travel to often.",
+                            text: "Home and Work are pinned. Add as many other places as you need.",
                             centered: false
                         )
 
-                        AddressLocationEditor(
-                            title: "Start",
-                            serifTitle: "Home",
-                            icon: "house.fill",
-                            address: $viewModel.homeAddress,
-                            accent: accent,
-                            mapsProvider: mapsProvider,
-                            onSelect: { viewModel.selectLocation($0, label: .home) }
-                        )
-
-                        AddressLocationEditor(
-                            title: "Destination",
-                            serifTitle: "Work",
-                            icon: "briefcase.fill",
-                            address: $viewModel.workAddress,
-                            accent: accent,
-                            mapsProvider: mapsProvider,
-                            onSelect: { viewModel.selectLocation($0, label: .work) }
-                        )
-
-                        AddressLocationEditor(
-                            title: "Optional",
-                            serifTitle: "Other",
-                            icon: "star.fill",
-                            address: $viewModel.otherAddress,
-                            name: $viewModel.otherName,
-                            accent: accent,
-                            mapsProvider: mapsProvider,
-                            onSelect: { viewModel.selectLocation($0, label: .other) }
-                        )
+                        homeWorkSection
+                        extrasSection
                     }
                     .padding(.horizontal, OnboardingMetrics.horizontalPadding)
                     .padding(.top, 24)
@@ -68,6 +40,106 @@ struct SavedLocationsEditorView: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
             }
+            .sheet(isPresented: Binding(
+                get: { viewModel.editingLocationID != nil },
+                set: { if !$0 { viewModel.editingLocationID = nil } }
+            ), onDismiss: {
+                viewModel.clearStaleEditingLocations()
+            }) {
+                if let id = viewModel.editingLocationID,
+                   let binding = viewModel.binding(for: id) {
+                    PlaceDetailEditorView(
+                        location: binding,
+                        accent: accent,
+                        mapsProvider: mapsProvider,
+                        canDelete: viewModel.canDelete(binding.wrappedValue),
+                        onDelete: {
+                            viewModel.deleteExtra(id: id)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var homeWorkSection: some View {
+        if let home = viewModel.homeBinding {
+            AddressLocationEditor(
+                title: "Start",
+                serifTitle: "Home",
+                icon: "house.fill",
+                address: homeAddressBinding(home),
+                accent: accent,
+                mapsProvider: mapsProvider,
+                onSelect: { applySearchResult($0, to: home) }
+            )
+        }
+
+        if let work = viewModel.workBinding {
+            AddressLocationEditor(
+                title: "Destination",
+                serifTitle: "Work",
+                icon: "briefcase.fill",
+                address: workAddressBinding(work),
+                accent: accent,
+                mapsProvider: mapsProvider,
+                onSelect: { applySearchResult($0, to: work) }
+            )
+        }
+    }
+
+    private var extrasSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Other places")
+                .font(Theme.Fonts.bodyEmphasis)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            if viewModel.extraLocations.isEmpty {
+                Text("Gym, partner's place, parents — add anywhere you travel to often.")
+                    .font(Theme.Fonts.secondary)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            } else {
+                ForEach(viewModel.extraLocations) { location in
+                    Button {
+                        viewModel.editingLocationID = location.id
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(accent.tintColor)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(location.displayName)
+                                    .font(Theme.Fonts.bodyEmphasis)
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                Text(location.address.isEmpty ? "Tap to set address" : location.address)
+                                    .font(Theme.Fonts.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 13)
+                        .background {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Theme.Colors.backgroundSurface)
+                        }
+                    }
+                    .buttonStyle(OnboardingPressStyle())
+                }
+            }
+
+            Button {
+                viewModel.addExtra()
+            } label: {
+                Label("Add place", systemImage: "plus.circle.fill")
+                    .font(Theme.Fonts.bodyEmphasis)
+                    .foregroundStyle(accent.tintColor)
+            }
+            .buttonStyle(OnboardingPressStyle())
         }
     }
 
@@ -86,6 +158,25 @@ struct SavedLocationsEditorView: View {
             .padding(.vertical, 12)
         }
         .background(Theme.Colors.backgroundPrimary)
+    }
+
+    private func homeAddressBinding(_ home: Binding<SavedLocation>) -> Binding<String> {
+        Binding(
+            get: { home.wrappedValue.address },
+            set: { home.wrappedValue.address = $0 }
+        )
+    }
+
+    private func workAddressBinding(_ work: Binding<SavedLocation>) -> Binding<String> {
+        Binding(
+            get: { work.wrappedValue.address },
+            set: { work.wrappedValue.address = $0 }
+        )
+    }
+
+    private func applySearchResult(_ result: ResolvedLocationSearchResult, to binding: Binding<SavedLocation>) {
+        binding.wrappedValue.address = result.formattedAddress
+        binding.wrappedValue.coordinate = result.coordinate
     }
 }
 

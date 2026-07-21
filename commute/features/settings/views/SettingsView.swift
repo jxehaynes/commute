@@ -41,7 +41,11 @@ struct SettingsView: View {
                     onSave: saveCustomRoute
                 )
                 .onAppear {
-                    builderViewModel.load(appState.userProfile.customCommuteRoute)
+                    let profile = appState.userProfile
+                    builderViewModel.configure(
+                        availableLocations: profile.locations,
+                        existingRoutes: profile.journeyRoutes
+                    )
                 }
             }
             .sheet(isPresented: $showLocationsEditor) {
@@ -142,31 +146,33 @@ struct SettingsView: View {
     }
 
     private var customRouteCard: some View {
-        settingsCard(title: "Your commute route", systemImage: "arrow.triangle.turn.up.right.diamond.fill") {
-            if let custom = appState.userProfile.customCommuteRoute, custom.isValid {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(custom.toRoute().summary)
-                        .font(Theme.Fonts.bodyEmphasis)
-                    Text("\(custom.steps.count) steps · \(custom.steps.reduce(0) { $0 + $1.estimatedMinutes }) min")
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    ForEach(custom.steps) { step in
-                        Label(step.summary, systemImage: step.mode.systemImage)
-                            .font(Theme.Fonts.secondary)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                }
-            } else {
+        settingsCard(title: "Your commute routes", systemImage: "arrow.triangle.turn.up.right.diamond.fill") {
+            if appState.userProfile.journeyRoutes.isEmpty {
                 Text(preferenceSummary)
                     .font(Theme.Fonts.secondary)
                     .foregroundStyle(Theme.Colors.textSecondary)
+            } else {
+                ForEach(appState.userProfile.journeyRoutes) { journeyRoute in
+                    if let summary = journeyRouteSummary(journeyRoute) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(summary.title)
+                                .font(Theme.Fonts.bodyEmphasis)
+                            Text(summary.detail)
+                                .font(Theme.Fonts.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                }
             }
 
             Button {
                 showCommuteBuilder = true
             } label: {
-                Label(appState.userProfile.customCommuteRoute == nil ? "Build custom route" : "Edit custom route", systemImage: "plus.circle.fill")
-                    .font(Theme.Fonts.bodyEmphasis)
+                Label(
+                    appState.userProfile.journeyRoutes.isEmpty ? "Build custom route" : "Add or edit route",
+                    systemImage: "plus.circle.fill"
+                )
+                .font(Theme.Fonts.bodyEmphasis)
             }
             .foregroundStyle(appState.accentStyle.tintColor)
         }
@@ -241,16 +247,30 @@ struct SettingsView: View {
         }
     }
 
-    private func saveCustomRoute(_ route: CustomCommuteRoute) {
+    private func saveCustomRoute(_ route: CustomCommuteRoute, from: SavedLocation, to: SavedLocation) {
         var profile = appState.userProfile
-        profile.customCommuteRoute = route
+        profile.setJourneyRoute(route, from: from, to: to)
         appState.updateProfile(profile)
     }
 
     private func saveLocations(_ locations: [SavedLocation]) {
         var profile = appState.userProfile
         profile.locations = locations
+        profile.pruneOrphanedJourneyRoutes()
+        profile.syncCommuteScheduleFromLocations()
         appState.updateProfile(profile)
+    }
+
+    private func journeyRouteSummary(_ journeyRoute: JourneyCommuteRoute) -> (title: String, detail: String)? {
+        let profile = appState.userProfile
+        guard let from = profile.locations.first(where: { $0.id == journeyRoute.routePair.fromID }),
+              let to = profile.locations.first(where: { $0.id == journeyRoute.routePair.toID }),
+              journeyRoute.route.isValid else { return nil }
+        let route = journeyRoute.route
+        return (
+            title: "\(from.displayName) → \(to.displayName)",
+            detail: "\(route.toRoute().summary) · \(route.steps.count) steps"
+        )
     }
 
     private var preferenceSummary: String {
