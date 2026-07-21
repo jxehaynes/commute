@@ -41,7 +41,17 @@ struct SettingsView: View {
                     onSave: saveCustomRoute
                 )
                 .onAppear {
-                    builderViewModel.load(appState.userProfile.customCommuteRoute)
+                    let profile = appState.userProfile
+                    let home = profile.locations.first(where: { $0.label == .home })
+                    let work = profile.locations.first(where: { $0.label == .work })
+                    let existing = home.flatMap { h in work.flatMap { w in profile.journeyRoute(from: h, to: w) } }
+                    builderViewModel.configure(
+                        availableLocations: profile.locations,
+                        lockedOrigin: home,
+                        lockedDestination: work,
+                        existingRoutes: profile.journeyRoutes,
+                        existing: existing
+                    )
                 }
             }
             .sheet(isPresented: $showLocationsEditor) {
@@ -143,7 +153,7 @@ struct SettingsView: View {
 
     private var customRouteCard: some View {
         settingsCard(title: "Your commute route", systemImage: "arrow.triangle.turn.up.right.diamond.fill") {
-            if let custom = appState.userProfile.customCommuteRoute, custom.isValid {
+            if let custom = primaryCustomRoute, custom.isValid {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(custom.toRoute().summary)
                         .font(Theme.Fonts.bodyEmphasis)
@@ -165,7 +175,7 @@ struct SettingsView: View {
             Button {
                 showCommuteBuilder = true
             } label: {
-                Label(appState.userProfile.customCommuteRoute == nil ? "Build custom route" : "Edit custom route", systemImage: "plus.circle.fill")
+                Label(primaryCustomRoute == nil ? "Build custom route" : "Edit custom route", systemImage: "plus.circle.fill")
                     .font(Theme.Fonts.bodyEmphasis)
             }
             .foregroundStyle(appState.accentStyle.tintColor)
@@ -241,9 +251,19 @@ struct SettingsView: View {
         }
     }
 
-    private func saveCustomRoute(_ route: CustomCommuteRoute) {
+    private var primaryCustomRoute: CustomCommuteRoute? {
+        let profile = appState.userProfile
+        if let home = profile.locations.first(where: { $0.label == .home }),
+           let work = profile.locations.first(where: { $0.label == .work }),
+           let route = profile.journeyRoute(from: home, to: work) {
+            return route
+        }
+        return profile.journeyRoutes.first?.route
+    }
+
+    private func saveCustomRoute(_ route: CustomCommuteRoute, from: SavedLocation, to: SavedLocation) {
         var profile = appState.userProfile
-        profile.customCommuteRoute = route
+        profile.setJourneyRoute(route, from: from, to: to)
         appState.updateProfile(profile)
     }
 
