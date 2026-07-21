@@ -1,0 +1,11 @@
+.cursor
+.DS_Store
+xcuserdata/
+DerivedData/
+.build/
+.obsidian/
+*.xcuserstate
+*.zip
+commute/neat-main/
+.env
+.env.*
