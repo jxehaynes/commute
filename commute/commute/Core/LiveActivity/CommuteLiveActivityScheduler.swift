@@ -31,36 +31,6 @@ final class CommuteLiveActivityScheduler {
         self.bufferMinutes = bufferMinutes
     }
 
-    private struct Leg {
-        var origin: SavedLocation
-        var destination: SavedLocation
-        var deadline: Date
-    }
-
-    /// Whichever of the two daily deadlines (arrive at work / arrive home) is
-    /// the next one still ahead of `now`.
-    private func nextLeg(for profile: UserProfile, now: Date, calendar: Calendar = .current) -> Leg? {
-        guard
-            let home = profile.location(labeled: .home),
-            let work = profile.location(labeled: .work)
-        else { return nil }
-
-        func nextOccurrence(of components: DateComponents) -> Date? {
-            calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTimePreservingSmallerComponents)
-        }
-
-        let legs = [
-            nextOccurrence(of: profile.commuteSchedule.arriveAtWorkBy).map {
-                Leg(origin: home, destination: work, deadline: $0)
-            },
-            nextOccurrence(of: profile.commuteSchedule.arriveHomeBy).map {
-                Leg(origin: work, destination: home, deadline: $0)
-            },
-        ].compactMap { $0 }
-
-        return legs.min { $0.deadline < $1.deadline }
-    }
-
     /// Call when the app becomes active, and from a registered `BGAppRefreshTask`.
     /// Starts the activity only once `now` falls within 20–30 minutes of the
     /// computed "leave by" time for the next leg of the commute.
@@ -68,7 +38,7 @@ final class CommuteLiveActivityScheduler {
         guard profile.enableLiveActivities else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         guard Activity<CommuteLiveActivityAttributes>.activities.isEmpty else { return }
-        guard let leg = nextLeg(for: profile, now: now) else { return }
+        guard let leg = NextLegResolver.nextLeg(for: profile, now: now) else { return }
         guard let eta = try? await etaProvider.estimate(from: leg.origin, to: leg.destination, departing: now) else { return }
 
         let leaveBy = leg.deadline.addingTimeInterval(-TimeInterval((eta.totalMinutes + bufferMinutes) * 60))

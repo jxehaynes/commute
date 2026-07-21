@@ -11,11 +11,15 @@ import SwiftUI
 struct commuteApp: App {
     @StateObject private var appState = AppState()
     @Environment(\.scenePhase) private var scenePhase
+    /// Shared so the Live Activity refresh and the in-app Directions view
+    /// poll through the same per-stop cache instead of hitting TfL twice.
+    private let arrivalsRepository = ArrivalsRepository()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environment(\.arrivalsRepository, arrivalsRepository)
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
@@ -29,7 +33,12 @@ struct commuteApp: App {
     /// the primary refresh point; see `CommuteLiveActivityScheduler` for the
     /// background-refresh caveat.
     private func refreshLiveActivity() async {
-        let etaProvider = StaticScheduleETAProvider(customRoute: appState.userProfile.customCommuteRoute)
+        let etaProvider = TfLETAProvider(
+            fallback: StaticScheduleETAProvider(customRoute: appState.userProfile.customCommuteRoute),
+            repository: arrivalsRepository,
+            customRoute: appState.userProfile.customCommuteRoute,
+            preferredPattern: appState.userProfile.preferredCommutePattern
+        )
         let scheduler = CommuteLiveActivityScheduler(etaProvider: etaProvider)
         await scheduler.checkAndStartIfNeeded(profile: appState.userProfile)
         await scheduler.refresh(profile: appState.userProfile)
