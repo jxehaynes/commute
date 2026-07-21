@@ -8,17 +8,44 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.arrivalsRepository) private var arrivalsRepository
+    @State private var directionsViewModel: DirectionsViewModel?
+    @State private var showSettings = false
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationStack {
+            Group {
+                if let directionsViewModel {
+                    DirectionsView(
+                        viewModel: directionsViewModel,
+                        profile: appState.userProfile,
+                        accent: appState.accentStyle
+                    )
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
         }
-        .padding()
+        .onAppear {
+            if directionsViewModel == nil {
+                directionsViewModel = DirectionsViewModel(repository: arrivalsRepository)
+            }
+        }
     }
 }
 
 #Preview {
     ContentView()
+        .environmentObject(AppState())
 }
