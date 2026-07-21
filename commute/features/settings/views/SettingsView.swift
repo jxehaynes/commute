@@ -42,15 +42,9 @@ struct SettingsView: View {
                 )
                 .onAppear {
                     let profile = appState.userProfile
-                    let home = profile.locations.first(where: { $0.label == .home })
-                    let work = profile.locations.first(where: { $0.label == .work })
-                    let existing = home.flatMap { h in work.flatMap { w in profile.journeyRoute(from: h, to: w) } }
                     builderViewModel.configure(
                         availableLocations: profile.locations,
-                        lockedOrigin: home,
-                        lockedDestination: work,
-                        existingRoutes: profile.journeyRoutes,
-                        existing: existing
+                        existingRoutes: profile.journeyRoutes
                     )
                 }
             }
@@ -152,31 +146,33 @@ struct SettingsView: View {
     }
 
     private var customRouteCard: some View {
-        settingsCard(title: "Your commute route", systemImage: "arrow.triangle.turn.up.right.diamond.fill") {
-            if let custom = primaryCustomRoute, custom.isValid {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(custom.toRoute().summary)
-                        .font(Theme.Fonts.bodyEmphasis)
-                    Text("\(custom.steps.count) steps · \(custom.steps.reduce(0) { $0 + $1.estimatedMinutes }) min")
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    ForEach(custom.steps) { step in
-                        Label(step.summary, systemImage: step.mode.systemImage)
-                            .font(Theme.Fonts.secondary)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                }
-            } else {
+        settingsCard(title: "Your commute routes", systemImage: "arrow.triangle.turn.up.right.diamond.fill") {
+            if appState.userProfile.journeyRoutes.isEmpty {
                 Text(preferenceSummary)
                     .font(Theme.Fonts.secondary)
                     .foregroundStyle(Theme.Colors.textSecondary)
+            } else {
+                ForEach(appState.userProfile.journeyRoutes) { journeyRoute in
+                    if let summary = journeyRouteSummary(journeyRoute) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(summary.title)
+                                .font(Theme.Fonts.bodyEmphasis)
+                            Text(summary.detail)
+                                .font(Theme.Fonts.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                }
             }
 
             Button {
                 showCommuteBuilder = true
             } label: {
-                Label(primaryCustomRoute == nil ? "Build custom route" : "Edit custom route", systemImage: "plus.circle.fill")
-                    .font(Theme.Fonts.bodyEmphasis)
+                Label(
+                    appState.userProfile.journeyRoutes.isEmpty ? "Build custom route" : "Add or edit route",
+                    systemImage: "plus.circle.fill"
+                )
+                .font(Theme.Fonts.bodyEmphasis)
             }
             .foregroundStyle(appState.accentStyle.tintColor)
         }
@@ -251,16 +247,6 @@ struct SettingsView: View {
         }
     }
 
-    private var primaryCustomRoute: CustomCommuteRoute? {
-        let profile = appState.userProfile
-        if let home = profile.locations.first(where: { $0.label == .home }),
-           let work = profile.locations.first(where: { $0.label == .work }),
-           let route = profile.journeyRoute(from: home, to: work) {
-            return route
-        }
-        return profile.journeyRoutes.first?.route
-    }
-
     private func saveCustomRoute(_ route: CustomCommuteRoute, from: SavedLocation, to: SavedLocation) {
         var profile = appState.userProfile
         profile.setJourneyRoute(route, from: from, to: to)
@@ -270,7 +256,21 @@ struct SettingsView: View {
     private func saveLocations(_ locations: [SavedLocation]) {
         var profile = appState.userProfile
         profile.locations = locations
+        profile.pruneOrphanedJourneyRoutes()
+        profile.syncCommuteScheduleFromLocations()
         appState.updateProfile(profile)
+    }
+
+    private func journeyRouteSummary(_ journeyRoute: JourneyCommuteRoute) -> (title: String, detail: String)? {
+        let profile = appState.userProfile
+        guard let from = profile.locations.first(where: { $0.id == journeyRoute.routePair.fromID }),
+              let to = profile.locations.first(where: { $0.id == journeyRoute.routePair.toID }),
+              journeyRoute.route.isValid else { return nil }
+        let route = journeyRoute.route
+        return (
+            title: "\(from.displayName) → \(to.displayName)",
+            detail: "\(route.toRoute().summary) · \(route.steps.count) steps"
+        )
     }
 
     private var preferenceSummary: String {
