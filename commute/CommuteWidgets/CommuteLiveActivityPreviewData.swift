@@ -65,3 +65,21 @@ extension CommuteLiveActivityAttributes.ContentState {
         )
     }
 }
+
+extension CommuteWidgetSnapshot {
+    static var preview: CommuteWidgetSnapshot {
+        CommuteWidgetSnapshot(
+            destinationLabel: "Work",
+            destinationIcon: "briefcase.fill",
+            accent: LiveActivityAccent(tintHex: "#5856D6", secondaryHex: "#7A79E8"),
+            leaveByDate: .now.addingTimeInterval(18 * 60),
+            arriveByDate: .now.addingTimeInterval(53 * 60),
+            etaMinutes: 32,
+            routeSteps: [
+                RouteStepSummary(icon: "figure.walk", label: "Walk"),
+                RouteStepSummary(icon: "tram.fill", label: "Elizabeth line"),
+                RouteStepSummary(icon: "bus.fill", label: "14 bus"),
+            ]
+        )
+    }
+}
