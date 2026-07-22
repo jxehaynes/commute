@@ -63,11 +63,11 @@ struct CommuteNextCommuteWidget: Widget {
         StaticConfiguration(kind: CommuteWidgetKind.nextCommute, provider: NextCommuteProvider()) { entry in
             NextCommuteWidgetView(entry: entry)
                 .containerBackground(Theme.Colors.backgroundSurface, for: .widget)
+                .widgetURL(URL(string: "commute://home"))
         }
         .configurationDisplayName("Next Commute")
         .description("Shows when to leave for your next scheduled commute.")
         .supportedFamilies([.systemSmall, .systemMedium])
-        .widgetURL(URL(string: "commute://home"))
     }
 }
 
