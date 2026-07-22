@@ -33,7 +33,7 @@ extension RouteLeg: Codable {
                 line: try container.decode(TfLLine.self, forKey: .line),
                 from: try container.decode(String.self, forKey: .from),
                 to: try container.decode(String.self, forKey: .to),
-                departureTime: try container.decode(String.self, forKey: .departureTime),
+                departureTime: try container.decodeIfPresent(Date.self, forKey: .departureTime),
                 platform: try container.decodeIfPresent(String.self, forKey: .platform),
                 stops: try container.decode(Int.self, forKey: .stops),
                 lineLabel: try container.decodeIfPresent(String.self, forKey: .lineLabel)
@@ -53,7 +53,7 @@ extension RouteLeg: Codable {
             try container.encode(line, forKey: .line)
             try container.encode(from, forKey: .from)
             try container.encode(to, forKey: .to)
-            try container.encode(departureTime, forKey: .departureTime)
+            try container.encodeIfPresent(departureTime, forKey: .departureTime)
             try container.encodeIfPresent(platform, forKey: .platform)
             try container.encode(stops, forKey: .stops)
             try container.encodeIfPresent(lineLabel, forKey: .lineLabel)

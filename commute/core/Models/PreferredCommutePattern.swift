@@ -43,17 +43,26 @@ struct PreferredCommutePattern: Codable, Equatable {
 }
 
 enum RouteScorer {
-    static func rankedRoutes(_ routes: [Route], preference: PreferredCommutePattern?) -> [Route] {
+    static func rankedRoutes(
+        _ routes: [Route],
+        preference: PreferredCommutePattern?,
+        disruptions: [Disruption] = []
+    ) -> [Route] {
         routes.sorted { lhs, rhs in
-            score(lhs, preference: preference) > score(rhs, preference: preference)
+            score(lhs, preference: preference, disruptions: disruptions)
+                > score(rhs, preference: preference, disruptions: disruptions)
         }
     }
 
-    static func preferredRoute(from routes: [Route], preference: PreferredCommutePattern?) -> Route? {
-        rankedRoutes(routes, preference: preference).first
+    static func preferredRoute(
+        from routes: [Route],
+        preference: PreferredCommutePattern?,
+        disruptions: [Disruption] = []
+    ) -> Route? {
+        rankedRoutes(routes, preference: preference, disruptions: disruptions).first
     }
 
-    static func score(_ route: Route, preference: PreferredCommutePattern?) -> Int {
+    static func score(_ route: Route, preference: PreferredCommutePattern?, disruptions: [Disruption] = []) -> Int {
         guard let preference else {
             return durationScore(route)
         }
@@ -81,13 +90,13 @@ enum RouteScorer {
         score -= abs(route.legs.count - preference.legKinds.count) * 20
         score -= walkingPenalty(route.legs.compactMap(\.walkMinutes), preferred: preference.walkingMinutes)
 
-        if route.status.isOnTime {
-            score += 40
-        } else {
-            score -= 80
-        }
+        score += onTimeScore(route, disruptions: disruptions)
 
         return score
+    }
+
+    private static func onTimeScore(_ route: Route, disruptions: [Disruption]) -> Int {
+        route.effectiveStatus(in: disruptions).isOnTime ? 40 : -80
     }
 
     private static func durationScore(_ route: Route) -> Int {

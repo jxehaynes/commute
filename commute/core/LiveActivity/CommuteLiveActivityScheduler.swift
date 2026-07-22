@@ -72,10 +72,12 @@ enum CommuteLiveActivityTiming {
 @MainActor
 final class CommuteLiveActivityScheduler {
     private let disruptionProvider: DisruptionProviding
+    private let routeProvider: any RouteProviding
     private var currentActivity: Activity<CommuteLiveActivityAttributes>?
 
-    init(disruptionProvider: DisruptionProviding? = nil) {
-        self.disruptionProvider = disruptionProvider ?? TfLDisruptionProvider()
+    init(disruptionProvider: DisruptionProviding? = nil, routeProvider: (any RouteProviding)? = nil) {
+        self.disruptionProvider = disruptionProvider ?? DisruptionStore.shared
+        self.routeProvider = routeProvider ?? BestAvailableRouteProvider()
     }
 
     /// Single orchestration entry point for foreground, background, and launch.
@@ -91,7 +93,12 @@ final class CommuteLiveActivityScheduler {
             return calendar.date(byAdding: .day, value: 1, to: startOfToday)
         }
 
-        let estimate = CommuteTravelTimeEstimator.estimate(for: profile, leg: leg)
+        let estimate = await CommuteTravelTimeEstimator.estimate(
+            for: profile,
+            leg: leg,
+            routeProvider: routeProvider,
+            disruptionProvider: disruptionProvider
+        )
         let leaveBy = CommuteLiveActivityTiming.leaveByDate(arriveBy: leg.arriveBy, travelMinutes: estimate.totalMinutes)
 
         if let activity = activeActivity() {
@@ -239,12 +246,13 @@ final class CommuteLiveActivityScheduler {
             )
         }
 
-        let activeDisruption = phase == .disruptionAlert ? routeDisruption : routeDisruption
+        // Disruption status is shown throughout (StatusLine renders it in every phase, not just
+        // .disruptionAlert), so the current disruption always carries through unconditionally.
         let state = makeContentState(
             leg: leg,
             estimate: estimate,
             leaveBy: leaveBy,
-            disruption: activeDisruption,
+            disruption: routeDisruption,
             phase: phase
         )
 

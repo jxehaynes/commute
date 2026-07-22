@@ -1,8 +1,13 @@
 import Foundation
 
 enum CommuteLeavePlanner {
+    /// When the route's first transit leg has a real scheduled departure, leave time is that
+    /// departure minus the walk to get there. Otherwise (Apple Maps fallback, a hand-built
+    /// custom route, or a walk-only route — none of which have a real clock time) falls back to
+    /// counting back from `arriveBy` using the route's total duration.
     static func firstBoardingLeaveTime(
         route: Route,
+        arriveBy: Date? = nil,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> Date? {
@@ -13,26 +18,22 @@ enum CommuteLeavePlanner {
             case .walk(let minutes, _):
                 walkMinutes += minutes
             case .transit(_, _, _, let departureTime, _, _, _):
-                guard let departure = parseDepartureTime(
-                    departureTime,
-                    relativeTo: now,
-                    calendar: calendar
-                ) else {
-                    return nil
-                }
-                return calendar.date(byAdding: .minute, value: -walkMinutes, to: departure)
+                guard let departureTime else { break }
+                return calendar.date(byAdding: .minute, value: -walkMinutes, to: departureTime)
             }
         }
 
-        return nil
+        guard let arriveBy else { return nil }
+        return arriveBy.addingTimeInterval(-TimeInterval(route.totalMinutes * 60))
     }
 
     static func minutesUntilLeave(
         route: Route,
+        arriveBy: Date? = nil,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> Int? {
-        guard let leave = firstBoardingLeaveTime(route: route, now: now, calendar: calendar) else {
+        guard let leave = firstBoardingLeaveTime(route: route, arriveBy: arriveBy, now: now, calendar: calendar) else {
             return nil
         }
         return max(0, Int(leave.timeIntervalSince(now).rounded(.up) / 60))
@@ -40,43 +41,16 @@ enum CommuteLeavePlanner {
 
     static func leaveByLabel(
         route: Route,
+        arriveBy: Date? = nil,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> String? {
-        guard let leave = firstBoardingLeaveTime(route: route, now: now, calendar: calendar) else {
+        guard let leave = firstBoardingLeaveTime(route: route, arriveBy: arriveBy, now: now, calendar: calendar) else {
             return nil
         }
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         formatter.calendar = calendar
         return formatter.string(from: leave)
-    }
-
-    private static func parseDepartureTime(
-        _ timeString: String,
-        relativeTo now: Date,
-        calendar: Calendar
-    ) -> Date? {
-        guard timeString != "--:--" else { return nil }
-
-        let parts = timeString.split(separator: ":")
-        guard parts.count == 2,
-              let hour = Int(parts[0]),
-              let minute = Int(parts[1]) else {
-            return nil
-        }
-
-        var components = calendar.dateComponents([.year, .month, .day], from: now)
-        components.hour = hour
-        components.minute = minute
-        components.second = 0
-
-        guard var departure = calendar.date(from: components) else { return nil }
-
-        if departure <= now {
-            departure = calendar.date(byAdding: .day, value: 1, to: departure) ?? departure
-        }
-
-        return departure
     }
 }

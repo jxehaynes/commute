@@ -13,6 +13,7 @@ struct JourneyRouteCard: View {
     var showsStatus: Bool = true
     var lineDisruptions: [Disruption] = []
     var statusLastUpdated: Date?
+    var statusUnavailable: Bool = false
     var destinationLabel: String = "work"
     var isExpandedBinding: Binding<Bool>? = nil
     let onTap: () -> Void
@@ -78,7 +79,8 @@ struct JourneyRouteCard: View {
                         disruptions: lineDisruptions,
                         lastUpdated: statusLastUpdated,
                         isInteractive: false,
-                        isExpanded: cardExpanded
+                        isExpanded: cardExpanded,
+                        isUnavailable: statusUnavailable
                     )
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
@@ -174,12 +176,16 @@ struct JourneyRouteCard: View {
                         Text("Platform \(platform)")
                     }
                     Text("\(stops) stops")
-                    Text("Arrive by \(arrivalTime(before: departureTime, minutes: 2))")
+                    if let arrival = arrivalTime(before: departureTime, minutes: 2) {
+                        Text("Arrive by \(arrival)")
+                    }
                 }
                 .font(Theme.Fonts.secondary)
                 .foregroundStyle(Theme.Colors.textSecondary)
 
-                nextTrainRow(after: departureTime)
+                if let departures = route.upcomingDepartures[index], !departures.isEmpty {
+                    nextTrainRow(departures: departures)
+                }
             }
         }
     }
@@ -224,11 +230,15 @@ struct JourneyRouteCard: View {
         return "Take \(prefix)\(labels.joined(separator: " or ")) to \(to)"
     }
 
-    private func nextTrainRow(after departureTime: String) -> some View {
-        let times = [3, 8, 13].map { nextTime(after: departureTime, offset: $0) }
+    private func nextTrainRow(departures: [Date]) -> some View {
+        let formatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            return formatter
+        }()
         return HStack(spacing: 8) {
-            ForEach(times, id: \.self) { time in
-                Text(time)
+            ForEach(departures, id: \.self) { departure in
+                Text(formatter.string(from: departure))
                     .font(Theme.Fonts.caption)
                     .monospacedDigit()
                     .foregroundStyle(Theme.Colors.textPrimary)
@@ -279,15 +289,15 @@ struct JourneyRouteCard: View {
         }
     }
 
-    private func arrivalTime(before departureTime: String, minutes: Int) -> String {
-        nextTime(after: departureTime, offset: -minutes)
+    private func arrivalTime(before departureTime: Date?, minutes: Int) -> String? {
+        guard let departureTime else { return nil }
+        return nextTime(after: departureTime, offset: -minutes)
     }
 
-    private func nextTime(after time: String, offset: Int) -> String {
-        let parts = time.split(separator: ":")
-        guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]) else { return time }
-        var total = hour * 60 + minute + offset
-        total = (total % (24 * 60) + (24 * 60)) % (24 * 60)
-        return String(format: "%02d:%02d", total / 60, total % 60)
+    private func nextTime(after time: Date, offset: Int) -> String {
+        let shifted = time.addingTimeInterval(TimeInterval(offset * 60))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: shifted)
     }
 }

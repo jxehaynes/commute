@@ -13,7 +13,7 @@ extension Route {
                         line: .elizabethLine,
                         from: "Tottenham Court Road",
                         to: "Paddington",
-                        departureTime: "08:47",
+                        departureTime: mockTime(hour: 8, minute: 47),
                         platform: "P6",
                         stops: 3
                     ),
@@ -30,7 +30,7 @@ extension Route {
                         line: .central,
                         from: "Holborn",
                         to: "Notting Hill Gate",
-                        departureTime: "08:51",
+                        departureTime: mockTime(hour: 8, minute: 51),
                         platform: nil,
                         stops: 5
                     ),
@@ -47,7 +47,7 @@ extension Route {
                         line: .circle,
                         from: "Farringdon",
                         to: "Bayswater",
-                        departureTime: "08:55",
+                        departureTime: mockTime(hour: 8, minute: 55),
                         platform: nil,
                         stops: 7
                     ),
@@ -56,5 +56,12 @@ extension Route {
                 status: .goodService
             )
         ]
+    }
+
+    private static func mockTime(hour: Int, minute: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        components.hour = hour
+        components.minute = minute
+        return Calendar.current.date(from: components) ?? .now
     }
 }

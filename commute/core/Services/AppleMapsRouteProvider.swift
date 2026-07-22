@@ -56,7 +56,7 @@ private extension MKRoute {
                     line: step.resolvedLine,
                     from: from.displayName,
                     to: to.displayName,
-                    departureTime: "--:--",
+                    departureTime: nil,
                     platform: nil,
                     stops: 1,
                     lineLabel: label.isEmpty ? "Apple Maps" : label
@@ -72,7 +72,7 @@ private extension MKRoute {
                     line: .nationalRail,
                     from: from.displayName,
                     to: to.displayName,
-                    departureTime: "--:--",
+                    departureTime: nil,
                     platform: nil,
                     stops: max(steps.count, 1),
                     lineLabel: "Apple Maps"

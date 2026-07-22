@@ -145,7 +145,7 @@ struct CommuteLegResolverTests {
 }
 
 struct CommuteTravelTimeEstimatorTests {
-    @Test func prefersCustomRouteDuration() {
+    @Test func prefersCustomRouteDuration() async {
         let home = SavedLocation(
             label: .home,
             address: "Home",
@@ -177,9 +177,92 @@ struct CommuteTravelTimeEstimatorTests {
         profile.setJourneyRoute(route, from: home, to: work)
 
         let leg = CommuteLeg(origin: home, destination: work, arriveBy: .now)
-        let estimate = CommuteTravelTimeEstimator.estimate(for: profile, leg: leg)
+        let estimate = await CommuteTravelTimeEstimator.estimate(for: profile, leg: leg)
         #expect(estimate.totalMinutes == 35)
     }
+
+    @Test func fallsBackToLiveRouteWhenNoCustomRoute() async {
+        let home = SavedLocation(
+            label: .home,
+            address: "Home",
+            coordinate: .init(latitude: 51.5, longitude: -0.1)
+        )
+        let work = SavedLocation(
+            label: .work,
+            address: "Work",
+            coordinate: .init(latitude: 51.51, longitude: -0.11)
+        )
+        let profile = UserProfile(
+            firstName: "Joe",
+            useSerif: true,
+            accentStyle: .gradient(.blue),
+            mapsProvider: .apple,
+            locations: [home, work],
+            usualRoutes: []
+        )
+
+        let liveRoute = Route(
+            summary: "Live route",
+            totalMinutes: 18,
+            legs: [.walk(minutes: 18, distanceMiles: 1.0)],
+            status: .goodService
+        )
+        let leg = CommuteLeg(origin: home, destination: work, arriveBy: .now)
+        let estimate = await CommuteTravelTimeEstimator.estimate(
+            for: profile,
+            leg: leg,
+            routeProvider: StubRouteProvider(routes: [liveRoute])
+        )
+        #expect(estimate.totalMinutes == 18)
+    }
+
+    @Test func fallsBackToStaticEstimateWhenLiveFetchFails() async {
+        let home = SavedLocation(
+            label: .home,
+            address: "Home",
+            coordinate: .init(latitude: 51.5, longitude: -0.1)
+        )
+        let work = SavedLocation(
+            label: .work,
+            address: "Work",
+            coordinate: .init(latitude: 51.51, longitude: -0.11)
+        )
+        let profile = UserProfile(
+            firstName: "Joe",
+            useSerif: true,
+            accentStyle: .gradient(.blue),
+            mapsProvider: .apple,
+            locations: [home, work],
+            usualRoutes: [],
+            preferredCommutePattern: PreferredCommutePattern(route: Route(
+                summary: "Fallback",
+                totalMinutes: 42,
+                legs: [.walk(minutes: 42, distanceMiles: 2.0)],
+                status: .goodService
+            ))
+        )
+
+        let leg = CommuteLeg(origin: home, destination: work, arriveBy: .now)
+        let estimate = await CommuteTravelTimeEstimator.estimate(
+            for: profile,
+            leg: leg,
+            routeProvider: StubRouteProvider(routes: nil)
+        )
+        #expect(estimate.totalMinutes == 42)
+    }
+}
+
+private struct StubRouteProvider: RouteProviding {
+    let routes: [Route]?
+
+    func fetchRoutes(from: SavedLocation, to: SavedLocation, query: RouteQuery) async throws -> [Route] {
+        guard let routes else { throw StubRouteProviderError.failed }
+        return routes
+    }
+}
+
+private enum StubRouteProviderError: Error {
+    case failed
 }
 
 struct UsualRouteDisruptionCheckerTests {
@@ -202,7 +285,7 @@ struct UsualRouteDisruptionCheckerTests {
                         line: .elizabethLine,
                         from: "A",
                         to: "B",
-                        departureTime: "08:00",
+                        departureTime: .now,
                         platform: nil,
                         stops: 3,
                         lineLabel: "Elizabeth line"

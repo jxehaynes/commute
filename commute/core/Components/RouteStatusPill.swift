@@ -6,6 +6,9 @@ struct RouteStatusPill: View {
     let lastUpdated: Date?
     var isInteractive: Bool = true
     var isExpanded: Bool = false
+    /// True when the most recent disruption check failed — shows "Status unavailable" rather
+    /// than implying confirmed good service off stale or default data.
+    var isUnavailable: Bool = false
 
     @State private var internalExpanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,6 +17,22 @@ struct RouteStatusPill: View {
 
     private var showsExpanded: Bool {
         isInteractive ? internalExpanded : isExpanded
+    }
+
+    /// `status` reflects the route provider's own status (currently always `.goodService` —
+    /// none of them compute real line status), so the actual severity comes from the real,
+    /// per-route disruptions that were separately fetched and matched to this route's lines.
+    /// Only falls back to `status` when there's no matching disruption to derive it from.
+    private var effectiveStatus: Route.LineStatus {
+        disruptions.map(\.severity).max { $0.disruptionPriority < $1.disruptionPriority } ?? status
+    }
+
+    private var displayLabel: String {
+        isUnavailable ? "Status unavailable" : effectiveStatus.displayLabel
+    }
+
+    private var displayColor: Color {
+        isUnavailable ? Theme.Colors.textSecondary : effectiveStatus.themeColor
     }
 
     var body: some View {
@@ -27,7 +46,7 @@ struct RouteStatusPill: View {
                 pillContent
             }
         }
-        .accessibilityLabel(status.displayLabel)
+        .accessibilityLabel(displayLabel)
         .accessibilityHint(
             showsExpanded ? "Collapse service status" : "Expand service status details"
         )
@@ -51,29 +70,33 @@ struct RouteStatusPill: View {
     }
 
     private var collapsedContent: some View {
-        Text(status.displayLabel)
+        Text(displayLabel)
             .font(Theme.Fonts.caption)
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(status.themeColor)
+            .background(displayColor)
             .clipShape(Capsule())
     }
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(status.displayLabel)
+            Text(displayLabel)
                 .font(Theme.Fonts.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.white)
 
-            if !disruptions.isEmpty {
+            if isUnavailable {
+                Text("Couldn't check live status.")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(.white.opacity(0.85))
+            } else if !disruptions.isEmpty {
                 ForEach(disruptions) { disruption in
                     Text("\(disruption.line.displayName): \(disruption.statusLabel)")
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(.white.opacity(0.92))
                 }
-            } else if status != .goodService {
+            } else if effectiveStatus != .goodService {
                 Text("No further details available.")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(.white.opacity(0.85))
@@ -88,7 +111,7 @@ struct RouteStatusPill: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(status.themeColor)
+        .background(displayColor)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

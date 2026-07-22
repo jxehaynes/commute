@@ -5,8 +5,6 @@ struct TfLJourneyProvider: RouteProviding {
     func fetchRoutes(from: SavedLocation, to: SavedLocation, query: RouteQuery) async throws -> [Route] {
         let origin = from.tflRoutingValue
         let destination = to.tflRoutingValue
-        print("TfL routing from: \(from.address) @ \(origin)")
-        print("TfL routing to: \(to.address) @ \(destination)")
         let strategies = TfLJourneyStrategy.strategies(for: query)
 
         let responses = await withTaskGroup(of: TfLJourneyResponse?.self) { group in
@@ -38,8 +36,9 @@ struct TfLJourneyProvider: RouteProviding {
             stopSequences[pair.route.id] = pair.stopSequences
         }
 
-        let deduped = pairs.map(\.route).deduplicatedBySignatureKeepingFastest()
-        return RouteGrouping.grouped(deduped, stopSequences: stopSequences)
+        // Keep every instance found across the time-sweep searches (not just the fastest) so
+        // RouteGrouping can surface real alternate departure times for the same journey.
+        return RouteGrouping.grouped(pairs.map(\.route), stopSequences: stopSequences)
     }
 
     private func fetchJourney(from: String, to: String, strategy: TfLJourneyStrategy) async throws -> TfLJourneyResponse {
@@ -234,7 +233,7 @@ private struct TfLLeg: Decodable {
             line: line,
             from: from,
             to: to,
-            departureTime: departureLabel,
+            departureTime: departureTime,
             platform: nil,
             stops: max(stopNames.count - 1, 1),
             lineLabel: resolvedLineLabel(line: line)
@@ -261,11 +260,6 @@ private struct TfLLeg: Decodable {
             return name
         }
         return nil
-    }
-
-    private var departureLabel: String {
-        guard let departureTime else { return "--:--" }
-        return DateFormatter.tflTime.string(from: departureTime)
     }
 }
 
@@ -416,24 +410,6 @@ private extension SavedLocation {
     }
 }
 
-private extension Array where Element == Route {
-    func deduplicatedBySignatureKeepingFastest() -> [Route] {
-        var bestBySignature: [String: Route] = [:]
-
-        for route in self {
-            if let existing = bestBySignature[route.signature] {
-                if route.totalMinutes < existing.totalMinutes {
-                    bestBySignature[route.signature] = route
-                }
-            } else {
-                bestBySignature[route.signature] = route
-            }
-        }
-
-        return Array(bestBySignature.values)
-    }
-}
-
 private extension JSONDecoder {
     static var tfl: JSONDecoder {
         let decoder = JSONDecoder()
@@ -477,12 +453,6 @@ private extension DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_GB_POSIX")
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return formatter
-    }()
-
-    static let tflTime: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
         return formatter
     }()
 }
