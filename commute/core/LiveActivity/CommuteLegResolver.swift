@@ -23,7 +23,13 @@ enum CommuteLegResolver {
             profile.commuteSchedule.arriveHome(on: now, calendar: calendar).map {
                 CommuteLeg(origin: work, destination: home, arriveBy: $0)
             },
-        ].compactMap { $0 }
+        ]
+        .compactMap { $0 }
+        // Drop legs whose deadline (plus arrival grace) has already passed today, so a
+        // completed morning commute doesn't keep shadowing the evening one.
+        .filter { $0.arriveBy.addingTimeInterval(CommuteLiveActivityTiming.arrivalGrace) > now }
+        // Respect each destination's configured days/periods (e.g. "weekdays only").
+        .filter { $0.destination.schedule.matches(now: now, calendar: calendar) }
 
         return legs.min { $0.arriveBy < $1.arriveBy }
     }

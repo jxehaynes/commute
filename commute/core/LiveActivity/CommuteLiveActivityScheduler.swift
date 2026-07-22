@@ -80,10 +80,16 @@ final class CommuteLiveActivityScheduler {
 
     /// Single orchestration entry point for foreground, background, and launch.
     @discardableResult
-    func runCommuteCheck(profile: UserProfile, now: Date = .now) async -> Date? {
+    func runCommuteCheck(profile: UserProfile, now: Date = .now, calendar: Calendar = .current) async -> Date? {
         guard profile.enableLiveActivities else { return nil }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return nil }
-        guard let leg = CommuteLegResolver.nextLeg(for: profile, now: now) else { return nil }
+        guard let leg = CommuteLegResolver.nextLeg(for: profile, now: now, calendar: calendar) else {
+            // Nothing left to show today (or today's schedule/weekday doesn't match) —
+            // wake up again at the start of the next day rather than going silent until
+            // the user happens to reopen the app.
+            let startOfToday = calendar.startOfDay(for: now)
+            return calendar.date(byAdding: .day, value: 1, to: startOfToday)
+        }
 
         let estimate = CommuteTravelTimeEstimator.estimate(for: profile, leg: leg)
         let leaveBy = CommuteLiveActivityTiming.leaveByDate(arriveBy: leg.arriveBy, travelMinutes: estimate.totalMinutes)
