@@ -124,6 +124,24 @@ final class HomeViewModel: ObservableObject {
             ?? PlaceScheduleMatcher.matchingPlaces(in: profile.locations, now: now)
     }
 
+    func selectableDestinations(for profile: UserProfile) -> [SavedLocation] {
+        let originID = journeyIntent?.origin.id
+        let filtered = profile.locations.filter { $0.id != originID }
+        return filtered.sorted { lhs, rhs in
+            func order(_ label: SavedLocation.LocationLabel) -> Int {
+                switch label {
+                case .home: 0
+                case .work: 1
+                case .other: 2
+                }
+            }
+            let leftOrder = order(lhs.label)
+            let rightOrder = order(rhs.label)
+            if leftOrder != rightOrder { return leftOrder < rightOrder }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+
     func needsDestinationPicker(for profile: UserProfile, now: Date = .now) -> Bool {
         let candidates = destinationCandidates(for: profile, now: now)
         guard candidates.count > 1 else { return false }
@@ -138,6 +156,12 @@ final class HomeViewModel: ObservableObject {
     }
 
     func resetDestinationSelectionIfNeeded(for profile: UserProfile, now: Date = .now) {
+        if let selectedDestinationID,
+           let selected = profile.locations.first(where: { $0.id == selectedDestinationID }),
+           selected.id != journeyIntent?.origin.id {
+            return
+        }
+
         let candidates = destinationCandidates(for: profile, now: now)
         if candidates.count <= 1 {
             selectedDestinationID = candidates.first?.id
@@ -151,6 +175,12 @@ final class HomeViewModel: ObservableObject {
     }
 
     func resolvedDestination(for profile: UserProfile, now: Date = .now) -> SavedLocation? {
+        if let selectedDestinationID,
+           let place = profile.locations.first(where: { $0.id == selectedDestinationID }),
+           place.id != journeyIntent?.origin.id {
+            return place
+        }
+
         let candidates = destinationCandidates(for: profile, now: now)
         switch candidates.count {
         case 0:
