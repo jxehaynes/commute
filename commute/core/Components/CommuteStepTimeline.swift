@@ -82,7 +82,12 @@ private struct CommuteStepRow: View {
             return "Walk \(minutes) min · \(miles) mi"
         case .transit(let line, let from, let to, let departureTime, _, _, let lineLabel):
             let name = lineLabel ?? "\(line.displayName) line"
-            return "\(name) · \(departureTime) · \(from) to \(to)"
+            if let departureTime {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "HH:mm"
+                return "\(name) · \(formatter.string(from: departureTime)) · \(from) to \(to)"
+            }
+            return "\(name) · \(from) to \(to)"
         }
     }
 

@@ -6,6 +6,7 @@ struct SwipeableJourneyRouteCard: View {
     let accent: AccentStyle
     var lineDisruptions: [Disruption]
     var statusLastUpdated: Date?
+    var statusUnavailable: Bool = false
     var destinationLabel: String
     var isExpandedBinding: Binding<Bool>? = nil
     let onTap: () -> Void
@@ -25,6 +26,7 @@ struct SwipeableJourneyRouteCard: View {
             showsStatus: true,
             lineDisruptions: lineDisruptions,
             statusLastUpdated: statusLastUpdated,
+            statusUnavailable: statusUnavailable,
             destinationLabel: destinationLabel,
             isExpandedBinding: isExpandedBinding,
             onTap: onTap

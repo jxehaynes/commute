@@ -10,6 +10,9 @@ struct Route: Identifiable, Equatable, Hashable {
     /// Other lines that serve the exact same stop sequence as the transit leg at a given index,
     /// e.g. two bus routes that share every stop between the same boarding and alighting points.
     var groupedAlternatives: [Int: [TransitLineOption]]
+    /// Real upcoming departure times for the same service at the transit leg at a given index —
+    /// soonest first — gathered from the other time-sweep searches that found this same journey.
+    var upcomingDepartures: [Int: [Date]]
 
     init(
         id: UUID = UUID(),
@@ -17,7 +20,8 @@ struct Route: Identifiable, Equatable, Hashable {
         totalMinutes: Int,
         legs: [RouteLeg],
         status: LineStatus,
-        groupedAlternatives: [Int: [TransitLineOption]] = [:]
+        groupedAlternatives: [Int: [TransitLineOption]] = [:],
+        upcomingDepartures: [Int: [Date]] = [:]
     ) {
         self.id = id
         self.summary = summary
@@ -25,6 +29,7 @@ struct Route: Identifiable, Equatable, Hashable {
         self.legs = legs
         self.status = status
         self.groupedAlternatives = groupedAlternatives
+        self.upcomingDepartures = upcomingDepartures
     }
 
     var transitLines: [TfLLine] {
@@ -32,6 +37,26 @@ struct Route: Identifiable, Equatable, Hashable {
             guard case .transit(let line, _, _, _, _, _, _) = leg else { return nil }
             return line
         }
+    }
+
+    /// Disruptions whose line matches one of this route's transit legs (accounting for the
+    /// National Rail operator aliasing, since disruption feeds report specific operators).
+    func matchingDisruptions(in disruptions: [Disruption]) -> [Disruption] {
+        let lines = Set(transitLines)
+        let includesNationalRail = lines.contains(.nationalRail)
+        return disruptions.filter { disruption in
+            lines.contains(disruption.line)
+                || (includesNationalRail && disruption.line.isNationalRailOperator)
+        }
+    }
+
+    /// The route's real-world status: the worst severity among matching disruptions, falling
+    /// back to `status` (currently always `.goodService`, since no provider computes it) when
+    /// there's no matching disruption to derive it from.
+    func effectiveStatus(in disruptions: [Disruption]) -> LineStatus {
+        matchingDisruptions(in: disruptions)
+            .map(\.severity)
+            .max { $0.disruptionPriority < $1.disruptionPriority } ?? status
     }
 
     var signature: String {
@@ -58,7 +83,7 @@ struct Route: Identifiable, Equatable, Hashable {
 struct TransitLineOption: Equatable, Hashable {
     let line: TfLLine
     let lineLabel: String?
-    let departureTime: String
+    let departureTime: Date?
     let platform: String?
 }
 
@@ -68,7 +93,7 @@ enum RouteLeg: Equatable, Hashable {
         line: TfLLine,
         from: String,
         to: String,
-        departureTime: String,
+        departureTime: Date?,
         platform: String?,
         stops: Int,
         lineLabel: String? = nil

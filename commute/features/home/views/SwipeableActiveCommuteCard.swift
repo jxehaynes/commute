@@ -8,6 +8,7 @@ struct SwipeableActiveCommuteCard: View {
     let accent: AccentStyle
     var lineDisruptions: [Disruption] = []
     var statusLastUpdated: Date?
+    var statusUnavailable: Bool = false
     let onSwipeToDirections: () -> Void
 
     @State private var horizontalOffset: CGFloat = 0
@@ -23,7 +24,8 @@ struct SwipeableActiveCommuteCard: View {
             leaveByTime: leaveByTime,
             accent: accent,
             lineDisruptions: lineDisruptions,
-            statusLastUpdated: statusLastUpdated
+            statusLastUpdated: statusLastUpdated,
+            statusUnavailable: statusUnavailable
         )
         .offset(x: horizontalOffset)
         .opacity(1 - Double(min(horizontalOffset / 300, 0.3)))

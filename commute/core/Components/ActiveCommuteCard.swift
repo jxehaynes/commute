@@ -8,6 +8,7 @@ struct ActiveCommuteCard: View {
     let accent: AccentStyle
     var lineDisruptions: [Disruption] = []
     var statusLastUpdated: Date?
+    var statusUnavailable: Bool = false
 
     @State private var isExpanded = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -43,7 +44,8 @@ struct ActiveCommuteCard: View {
                     disruptions: lineDisruptions,
                     lastUpdated: statusLastUpdated,
                     isInteractive: false,
-                    isExpanded: isExpanded
+                    isExpanded: isExpanded,
+                    isUnavailable: statusUnavailable
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)

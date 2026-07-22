@@ -184,6 +184,7 @@ struct JourneyOptionsView: View {
                     accent: accentStyle,
                     lineDisruptions: viewModel.disruptions(for: route),
                     statusLastUpdated: viewModel.lastUpdated,
+                    statusUnavailable: viewModel.statusUnavailable,
                     onSwipeToDirections: {
                         directionsRoute = route
                     }
@@ -206,6 +207,7 @@ struct JourneyOptionsView: View {
                     accent: accentStyle,
                     lineDisruptions: viewModel.disruptions(for: route),
                     statusLastUpdated: viewModel.lastUpdated,
+                    statusUnavailable: viewModel.statusUnavailable,
                     destinationLabel: destination.displayName,
                     isExpandedBinding: expansionBinding(for: route),
                     onTap: {},

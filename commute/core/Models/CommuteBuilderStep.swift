@@ -82,7 +82,7 @@ struct CommuteBuilderStep: Identifiable, Codable, Equatable {
                 line: line,
                 from: fromStop,
                 to: toStop,
-                departureTime: "08:45",
+                departureTime: nil,
                 platform: nil,
                 stops: max(stopCount, 1),
                 lineLabel: lineName
@@ -92,7 +92,7 @@ struct CommuteBuilderStep: Identifiable, Codable, Equatable {
                 line: .bus,
                 from: fromStop,
                 to: toStop,
-                departureTime: "08:45",
+                departureTime: nil,
                 platform: nil,
                 stops: max(stopCount, 1),
                 lineLabel: lineName

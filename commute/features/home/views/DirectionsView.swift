@@ -132,9 +132,11 @@ struct DirectionsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         TransitLineChipView(line: line, lineLabel: lineLabel)
-                        Text(departureTime)
-                            .font(Theme.Fonts.bodyEmphasis)
-                            .monospacedDigit()
+                        if let departureTime {
+                            Text(departureTime, format: .dateTime.hour().minute())
+                                .font(Theme.Fonts.bodyEmphasis)
+                                .monospacedDigit()
+                        }
                     }
                     Text("\(from) → \(to)")
                         .font(Theme.Fonts.bodyEmphasis)

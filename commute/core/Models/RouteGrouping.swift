@@ -55,6 +55,8 @@ enum RouteGrouping {
         lineLabel?.localizedCaseInsensitiveContains("bus") ?? false
     }
 
+    static let maxUpcomingDepartures = 3
+
     private static func merge(_ group: [Route]) -> Route {
         precondition(!group.isEmpty, "RouteGrouping.merge called with an empty group")
         guard group.count > 1, let fastest = group.min(by: { $0.totalMinutes < $1.totalMinutes }) else {
@@ -63,6 +65,7 @@ enum RouteGrouping {
 
         var mergedLegs = fastest.legs
         var alternatives: [Int: [TransitLineOption]] = [:]
+        var upcomingDepartures: [Int: [Date]] = [:]
 
         for index in fastest.legs.indices {
             guard case .transit(_, let from, let to, _, _, let stops, let fastestLabel) = fastest.legs[index] else { continue }
@@ -72,6 +75,12 @@ enum RouteGrouping {
 
             if isBus(lineLabel: fastestLabel), options.count > 1 {
                 alternatives[index] = Array(options.prefix(maxBusAlternatives))
+            }
+
+            let identity = soonest.lineLabel ?? soonest.line.rawValue
+            let departures = realDepartureTimes(forLegIndex: index, identity: identity, in: group)
+            if !departures.isEmpty {
+                upcomingDepartures[index] = departures
             }
 
             mergedLegs[index] = .transit(
@@ -91,23 +100,49 @@ enum RouteGrouping {
             totalMinutes: fastest.totalMinutes,
             legs: mergedLegs,
             status: fastest.status,
-            groupedAlternatives: alternatives
+            groupedAlternatives: alternatives,
+            upcomingDepartures: upcomingDepartures
         )
     }
 
+    /// Real, distinct departure times for the same line/service at this leg index across every
+    /// time-sweep instance in the group — soonest first, capped at `maxUpcomingDepartures`.
+    private static func realDepartureTimes(forLegIndex index: Int, identity: String, in group: [Route]) -> [Date] {
+        var seen: Set<Date> = []
+        var times: [Date] = []
+        for route in group where route.legs.indices.contains(index) {
+            guard case .transit(let line, _, _, let departureTime?, _, _, let lineLabel) = route.legs[index],
+                  (lineLabel ?? line.rawValue) == identity else { continue }
+            if seen.insert(departureTime).inserted {
+                times.append(departureTime)
+            }
+        }
+        return Array(times.sorted().prefix(maxUpcomingDepartures))
+    }
+
     /// One option per distinct line/bus-number at this leg index, keeping only the soonest
-    /// departure for each, sorted soonest-first.
+    /// departure for each, sorted soonest-first. A missing departure time (no real schedule)
+    /// always sorts last.
     private static func distinctOptions(forLegIndex index: Int, in group: [Route]) -> [TransitLineOption] {
         var soonestByIdentity: [String: TransitLineOption] = [:]
         for route in group where route.legs.indices.contains(index) {
             guard case .transit(let line, _, _, let departureTime, let platform, _, let lineLabel) = route.legs[index] else { continue }
             let option = TransitLineOption(line: line, lineLabel: lineLabel, departureTime: departureTime, platform: platform)
             let identity = lineLabel ?? line.rawValue
-            if let existing = soonestByIdentity[identity], existing.departureTime <= option.departureTime {
+            if let existing = soonestByIdentity[identity], isSoonerOrEqual(existing.departureTime, option.departureTime) {
                 continue
             }
             soonestByIdentity[identity] = option
         }
-        return soonestByIdentity.values.sorted { $0.departureTime < $1.departureTime }
+        return soonestByIdentity.values.sorted { isSoonerOrEqual($0.departureTime, $1.departureTime) }
+    }
+
+    private static func isSoonerOrEqual(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        switch (lhs, rhs) {
+        case (let lhs?, let rhs?): lhs <= rhs
+        case (nil, nil): true
+        case (nil, _): false
+        case (_, nil): true
+        }
     }
 }

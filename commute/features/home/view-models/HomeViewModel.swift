@@ -8,6 +8,7 @@ final class HomeViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var disruptions: [Disruption] = []
     @Published var lastUpdated: Date?
+    @Published var statusUnavailable = false
     @Published var errorMessage: String?
     @Published var selectedDestinationID: UUID?
     @Published var journeyIntent: JourneyIntent?
@@ -32,15 +33,18 @@ final class HomeViewModel: ObservableObject {
         disruptionProvider: (any DisruptionProviding)? = nil
     ) {
         self.routeProvider = routeProvider ?? BestAvailableRouteProvider()
-        self.disruptionProvider = disruptionProvider ?? TfLDisruptionProvider()
+        self.disruptionProvider = disruptionProvider ?? DisruptionStore.shared
     }
 
     func refreshDisruptions() async {
         do {
             disruptions = try await disruptionProvider.fetchDisruptions()
             lastUpdated = Date()
+            statusUnavailable = false
         } catch {
-            // Keep any previously loaded disruptions; the status line falls back gracefully.
+            // Keep any previously loaded disruptions, but flag that the latest check failed so
+            // the status line doesn't claim confirmed good service off stale data.
+            statusUnavailable = true
         }
     }
 
@@ -186,23 +190,46 @@ final class HomeViewModel: ObservableObject {
            custom.isValid {
             return custom.toRoute()
         }
-        return RouteScorer.preferredRoute(from: routes, preference: profile.preferredCommutePattern)
+        return RouteScorer.preferredRoute(from: routes, preference: profile.preferredCommutePattern, disruptions: disruptions)
     }
 
     func alternativeRoutes(for profile: UserProfile) -> [Route] {
         guard let preferred = defaultRoute(for: profile) else { return routes }
         return RouteScorer.rankedRoutes(
             routes.filter { $0.id != preferred.id },
-            preference: profile.preferredCommutePattern
+            preference: profile.preferredCommutePattern,
+            disruptions: disruptions
         )
     }
 
     func minutesUntilLeave(for profile: UserProfile, route: Route, now: Date = .now) -> Int? {
-        CommuteLeavePlanner.minutesUntilLeave(route: route, now: now)
+        CommuteLeavePlanner.minutesUntilLeave(
+            route: route,
+            arriveBy: arriveByDeadline(for: profile, now: now),
+            now: now
+        )
     }
 
     func leaveByTime(for profile: UserProfile, route: Route, now: Date = .now) -> String? {
-        CommuteLeavePlanner.leaveByLabel(route: route, now: now)
+        CommuteLeavePlanner.leaveByLabel(
+            route: route,
+            arriveBy: arriveByDeadline(for: profile, now: now),
+            now: now
+        )
+    }
+
+    /// The user's scheduled arrival deadline for the currently resolved destination, used as a
+    /// fallback anchor when a route has no real scheduled departure time to count back from.
+    private func arriveByDeadline(for profile: UserProfile, now: Date) -> Date? {
+        guard let destination = resolvedDestination(for: profile, now: now) else { return nil }
+        switch destination.label {
+        case .work:
+            return profile.commuteSchedule.arriveAtWork(on: now)
+        case .home:
+            return profile.commuteSchedule.arriveHome(on: now)
+        case .other:
+            return nil
+        }
     }
 
     var statusTimeLabel: String {
@@ -213,10 +240,16 @@ final class HomeViewModel: ObservableObject {
 
     var statusLine: String {
         let time = statusTimeLabel
-        let displayStatus = routes.first(where: { $0.status.isOnTime })?.status.displayLabel
-            ?? routes.first?.status.displayLabel
-            ?? "Good service"
-        return "\(time) · \(displayStatus)"
+        if statusUnavailable {
+            return "\(time) · Status unavailable"
+        }
+        // route.status is always `.goodService` from every provider — none of them compute
+        // real line status — so the actual severity is derived from the disruptions that were
+        // separately fetched and matched to the currently loaded routes' lines.
+        let worstSeverity = routes
+            .flatMap { disruptions(for: $0).map(\.severity) }
+            .max { $0.disruptionPriority < $1.disruptionPriority }
+        return "\(time) · \(worstSeverity?.displayLabel ?? "Good service")"
     }
 
     func networkDisruptions(matching preferences: LineVisibilityPreferences) -> [Disruption] {
@@ -232,13 +265,7 @@ final class HomeViewModel: ObservableObject {
     }
 
     func disruptions(for route: Route) -> [Disruption] {
-        let lines = Set(route.transitLines)
-        let includesNationalRail = lines.contains(.nationalRail)
-
-        return disruptions.filter { disruption in
-            lines.contains(disruption.line)
-                || (includesNationalRail && disruption.line.isNationalRailOperator)
-        }
+        route.matchingDisruptions(in: disruptions)
     }
 
     private func performRouteLoad(
@@ -274,11 +301,6 @@ final class HomeViewModel: ObservableObject {
             } else {
                 errorMessage = nil
                 storeRouteCache(from: from, to: to, routes: loadedRoutes)
-            }
-
-            if let loadedDisruptions = try? await disruptionProvider.fetchDisruptions() {
-                disruptions = loadedDisruptions
-                lastUpdated = Date()
             }
         } catch is CancellationError {
         } catch {

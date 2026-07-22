@@ -48,7 +48,7 @@ final class CommuteBackgroundRefreshManager {
                 guard profile.enableLiveActivities else { return }
                 guard let leg = CommuteLegResolver.nextLeg(for: profile, now: .now) else { return }
 
-                let estimate = CommuteTravelTimeEstimator.estimate(for: profile, leg: leg)
+                let estimate = await CommuteTravelTimeEstimator.estimate(for: profile, leg: leg)
                 let leaveBy = CommuteLiveActivityTiming.leaveByDate(
                     arriveBy: leg.arriveBy,
                     travelMinutes: estimate.totalMinutes

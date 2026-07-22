@@ -28,11 +28,12 @@ struct CommuteLeavePlannerTests {
 
     private func route(
         walkMinutes: Int = 8,
-        departureTime: String = "08:47"
+        departureTime: Date?,
+        totalMinutes: Int? = nil
     ) -> Route {
         Route(
             summary: "Via Central line",
-            totalMinutes: walkMinutes + 20,
+            totalMinutes: totalMinutes ?? walkMinutes + 20,
             legs: [
                 .walk(minutes: walkMinutes, distanceMiles: 0.4),
                 .transit(
@@ -52,7 +53,7 @@ struct CommuteLeavePlannerTests {
     @Test func minutesUntilLeaveUsesFirstTransitDepartureMinusWalk() {
         let now = date(hour: 8, minute: 30)
         let result = CommuteLeavePlanner.minutesUntilLeave(
-            route: route(walkMinutes: 8, departureTime: "08:47"),
+            route: route(walkMinutes: 8, departureTime: date(hour: 8, minute: 47)),
             now: now,
             calendar: calendar
         )
@@ -62,7 +63,7 @@ struct CommuteLeavePlannerTests {
     @Test func minutesUntilLeaveIsZeroWhenWalkArrivesAtDeparture() {
         let now = date(hour: 8, minute: 39)
         let result = CommuteLeavePlanner.minutesUntilLeave(
-            route: route(walkMinutes: 8, departureTime: "08:47"),
+            route: route(walkMinutes: 8, departureTime: date(hour: 8, minute: 47)),
             now: now,
             calendar: calendar
         )
@@ -72,14 +73,14 @@ struct CommuteLeavePlannerTests {
     @Test func leaveByLabelReflectsDepartureMinusWalk() {
         let now = date(hour: 8, minute: 30)
         let label = CommuteLeavePlanner.leaveByLabel(
-            route: route(walkMinutes: 8, departureTime: "08:47"),
+            route: route(walkMinutes: 8, departureTime: date(hour: 8, minute: 47)),
             now: now,
             calendar: calendar
         )
         #expect(label == "08:39")
     }
 
-    @Test func walkOnlyRouteReturnsNilLeaveTiming() {
+    @Test func walkOnlyRouteReturnsNilLeaveTimingWithoutArriveBy() {
         let walkOnly = Route(
             summary: "Walk route",
             totalMinutes: 15,
@@ -92,23 +93,27 @@ struct CommuteLeavePlannerTests {
         #expect(CommuteLeavePlanner.leaveByLabel(route: walkOnly, now: now, calendar: calendar) == nil)
     }
 
-    @Test func invalidDepartureTimeReturnsNilLeaveTiming() {
+    @Test func noRealDepartureAndNoArriveByReturnsNilLeaveTiming() {
         let now = date(hour: 8, minute: 30)
-        let invalidRoute = route(walkMinutes: 5, departureTime: "--:--")
+        let noScheduleRoute = route(walkMinutes: 5, departureTime: nil)
 
-        #expect(CommuteLeavePlanner.minutesUntilLeave(route: invalidRoute, now: now, calendar: calendar) == nil)
-        #expect(CommuteLeavePlanner.leaveByLabel(route: invalidRoute, now: now, calendar: calendar) == nil)
+        #expect(CommuteLeavePlanner.minutesUntilLeave(route: noScheduleRoute, now: now, calendar: calendar) == nil)
+        #expect(CommuteLeavePlanner.leaveByLabel(route: noScheduleRoute, now: now, calendar: calendar) == nil)
     }
 
-    @Test func pastDepartureRollsToNextDay() {
-        let now = date(hour: 20, minute: 0)
+    @Test func noRealDepartureFallsBackToArriveByMinusTotalDuration() {
+        let now = date(hour: 8, minute: 0)
+        let arriveBy = date(hour: 9, minute: 0)
+        let noScheduleRoute = route(walkMinutes: 5, departureTime: nil, totalMinutes: 40)
+
         let result = CommuteLeavePlanner.minutesUntilLeave(
-            route: route(walkMinutes: 8, departureTime: "08:47"),
+            route: noScheduleRoute,
+            arriveBy: arriveBy,
             now: now,
             calendar: calendar
         )
-        // Leave at 08:39 next day = 12h 39m from 20:00
-        #expect(result == 759)
+        // Leave at 08:20 (09:00 - 40 min), now 08:00 -> 20 mins
+        #expect(result == 20)
     }
 
     @Test func accumulatesMultipleWalkLegsBeforeFirstTransit() {
@@ -122,7 +127,7 @@ struct CommuteLeavePlannerTests {
                     line: .district,
                     from: "Westminster",
                     to: "Tower Hill",
-                    departureTime: "09:00",
+                    departureTime: date(hour: 9, minute: 0),
                     platform: nil,
                     stops: 4
                 )

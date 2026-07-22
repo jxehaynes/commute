@@ -3,6 +3,13 @@ import Testing
 @testable import commute
 
 struct RouteGroupingTests {
+    private func time(_ hour: Int, _ minute: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return Calendar.current.date(from: components)!
+    }
 
     @Test func mergesRoutesSharingIdenticalStopSequenceButDifferentLines() {
         let sharedStops = ["Bank", "Monument", "Tower Hill"]
@@ -16,7 +23,7 @@ struct RouteGroupingTests {
                     line: .nationalRail,
                     from: "Bank",
                     to: "Tower Hill",
-                    departureTime: "08:55",
+                    departureTime: time(8, 55),
                     platform: nil,
                     stops: 2,
                     lineLabel: "Bus 225"
@@ -35,7 +42,7 @@ struct RouteGroupingTests {
                     line: .nationalRail,
                     from: "Bank",
                     to: "Tower Hill",
-                    departureTime: "08:48",
+                    departureTime: time(8, 48),
                     platform: nil,
                     stops: 2,
                     lineLabel: "Bus 141"
@@ -62,7 +69,7 @@ struct RouteGroupingTests {
             Issue.record("Expected merged leg to remain a transit leg")
             return
         }
-        #expect(departureTime == "08:48")
+        #expect(departureTime == time(8, 48))
         #expect(lineLabel == "Bus 141")
     }
 
@@ -75,7 +82,7 @@ struct RouteGroupingTests {
                     line: .nationalRail,
                     from: "Bank",
                     to: "Tower Hill",
-                    departureTime: "08:55",
+                    departureTime: time(8, 55),
                     platform: nil,
                     stops: 2,
                     lineLabel: "Bus 225"
@@ -92,7 +99,7 @@ struct RouteGroupingTests {
                     line: .nationalRail,
                     from: "Bank",
                     to: "Tower Hill",
-                    departureTime: "08:50",
+                    departureTime: time(8, 50),
                     platform: nil,
                     stops: 4,
                     lineLabel: "Bus 42"
@@ -115,7 +122,7 @@ struct RouteGroupingTests {
     @Test func collapsesDuplicateFixedLineRoutesToASingleEntryWithNoAlternatives() {
         let sharedStops = ["Dalston Junction", "Hoxton", "Shoreditch High Street"]
 
-        func mildmayRoute(totalMinutes: Int, walkMinutes: Int, departureTime: String, lineLabel: String?) -> Route {
+        func mildmayRoute(totalMinutes: Int, walkMinutes: Int, departureTime: Date, lineLabel: String?) -> Route {
             Route(
                 summary: "Via the Mildmay line",
                 totalMinutes: totalMinutes,
@@ -138,8 +145,8 @@ struct RouteGroupingTests {
 
         // Two journeys for the exact same Mildmay ride, returned by different TfL search
         // strategies with slightly different walking-time estimates and label formatting.
-        let leastTime = mildmayRoute(totalMinutes: 20, walkMinutes: 5, departureTime: "08:50", lineLabel: nil)
-        let leastWalking = mildmayRoute(totalMinutes: 23, walkMinutes: 8, departureTime: "08:44", lineLabel: "Mildmay line")
+        let leastTime = mildmayRoute(totalMinutes: 20, walkMinutes: 5, departureTime: time(8, 50), lineLabel: nil)
+        let leastWalking = mildmayRoute(totalMinutes: 23, walkMinutes: 8, departureTime: time(8, 44), lineLabel: "Mildmay line")
 
         let stopSequences: [UUID: [Int: [String]]] = [
             leastTime.id: [1: sharedStops],
@@ -156,13 +163,59 @@ struct RouteGroupingTests {
             Issue.record("Expected merged leg to remain a transit leg")
             return
         }
-        #expect(departureTime == "08:44")
+        #expect(departureTime == time(8, 44))
+    }
+
+    @Test func collectsRealUpcomingDeparturesForTheSameFixedLineService() {
+        let sharedStops = ["Dalston Junction", "Hoxton", "Shoreditch High Street"]
+
+        func mildmayRoute(departureTime: Date) -> Route {
+            Route(
+                summary: "Via the Mildmay line",
+                totalMinutes: 20,
+                legs: [
+                    .walk(minutes: 5, distanceMiles: 0.3),
+                    .transit(
+                        line: .mildmay,
+                        from: "Dalston Junction",
+                        to: "Shoreditch High Street",
+                        departureTime: departureTime,
+                        platform: nil,
+                        stops: 2,
+                        lineLabel: "Mildmay line"
+                    ),
+                    .walk(minutes: 4, distanceMiles: 0.2)
+                ],
+                status: .goodService
+            )
+        }
+
+        // Three time-sweep instances of the exact same Mildmay journey, each finding a
+        // different real upcoming departure of the same service.
+        let routes = [
+            mildmayRoute(departureTime: time(8, 50)),
+            mildmayRoute(departureTime: time(8, 40)),
+            mildmayRoute(departureTime: time(9, 0)),
+            // A duplicate of the 08:40 instance — should not appear twice.
+            mildmayRoute(departureTime: time(8, 40))
+        ]
+
+        var stopSequences: [UUID: [Int: [String]]] = [:]
+        for route in routes {
+            stopSequences[route.id] = [1: sharedStops]
+        }
+
+        let grouped = RouteGrouping.grouped(routes, stopSequences: stopSequences)
+
+        #expect(grouped.count == 1)
+        let merged = try! #require(grouped.first)
+        #expect(merged.upcomingDepartures[1] == [time(8, 40), time(8, 50), time(9, 0)])
     }
 
     @Test func capsBusAlternativesAtThreeAndDedupesRepeatedBusNumbers() {
         let sharedStops = ["Bank", "Monument", "Tower Hill"]
 
-        func busRoute(number: String, departureTime: String, totalMinutes: Int) -> Route {
+        func busRoute(number: String, departureTime: Date, totalMinutes: Int) -> Route {
             Route(
                 summary: "Via Bus \(number)",
                 totalMinutes: totalMinutes,
@@ -182,12 +235,12 @@ struct RouteGroupingTests {
         }
 
         let routes = [
-            busRoute(number: "225", departureTime: "08:55", totalMinutes: 20),
-            busRoute(number: "141", departureTime: "08:48", totalMinutes: 22),
-            busRoute(number: "42", departureTime: "08:50", totalMinutes: 21),
-            busRoute(number: "15", departureTime: "08:52", totalMinutes: 21),
+            busRoute(number: "225", departureTime: time(8, 55), totalMinutes: 20),
+            busRoute(number: "141", departureTime: time(8, 48), totalMinutes: 22),
+            busRoute(number: "42", departureTime: time(8, 50), totalMinutes: 21),
+            busRoute(number: "15", departureTime: time(8, 52), totalMinutes: 21),
             // A later, slower duplicate of the 225 — should not create a second "225" entry.
-            busRoute(number: "225", departureTime: "09:10", totalMinutes: 25)
+            busRoute(number: "225", departureTime: time(9, 10), totalMinutes: 25)
         ]
 
         var stopSequences: [UUID: [Int: [String]]] = [:]
@@ -213,7 +266,7 @@ struct RouteGroupingTests {
                     line: .central,
                     from: "Holborn",
                     to: "Notting Hill Gate",
-                    departureTime: "08:51",
+                    departureTime: time(8, 51),
                     platform: nil,
                     stops: 5,
                     lineLabel: nil
