@@ -73,6 +73,77 @@ struct CommuteLiveActivityTimingTests {
     }
 }
 
+struct CommuteLegResolverTests {
+    private let calendar = Calendar(identifier: .gregorian)
+
+    private func date(year: Int = 2026, month: Int = 7, day: Int = 21, hour: Int, minute: Int) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))!
+    }
+
+    private func makeProfile(home: SavedLocation, work: SavedLocation) -> UserProfile {
+        UserProfile(
+            firstName: "Joe",
+            useSerif: true,
+            accentStyle: .gradient(.blue),
+            mapsProvider: .apple,
+            locations: [home, work],
+            usualRoutes: []
+        )
+    }
+
+    @Test func skipsMorningLegOnceItsArrivalHasPassed() {
+        let home = SavedLocation(
+            label: .home, address: "Home", coordinate: .init(latitude: 51.5, longitude: -0.1),
+            schedule: PlaceSchedule.defaulted(for: .home)
+        )
+        let work = SavedLocation(
+            label: .work, address: "Work", coordinate: .init(latitude: 51.51, longitude: -0.11),
+            schedule: PlaceSchedule.defaulted(for: .work)
+        )
+        let profile = makeProfile(home: home, work: work)
+
+        // 2026-07-21 is a Tuesday; the 9:00am work arrival is long past by the afternoon,
+        // so nextLeg must fall through to the evening home leg instead of getting stuck.
+        let leg = CommuteLegResolver.nextLeg(for: profile, now: date(hour: 14, minute: 0), calendar: calendar)
+        #expect(leg?.destination.label == .home)
+    }
+
+    @Test func excludesLegWhoseDestinationScheduleDoesNotMatchToday() {
+        let home = SavedLocation(
+            label: .home, address: "Home", coordinate: .init(latitude: 51.5, longitude: -0.1),
+            schedule: PlaceSchedule.defaulted(for: .home)
+        )
+        let work = SavedLocation(
+            label: .work, address: "Work", coordinate: .init(latitude: 51.51, longitude: -0.11),
+            schedule: PlaceSchedule.defaulted(for: .work)
+        )
+        let profile = makeProfile(home: home, work: work)
+
+        // 2026-07-25 is a Saturday; both legs default to weekdays only, so neither should resolve.
+        let leg = CommuteLegResolver.nextLeg(
+            for: profile,
+            now: date(year: 2026, month: 7, day: 25, hour: 8, minute: 0),
+            calendar: calendar
+        )
+        #expect(leg == nil)
+    }
+
+    @Test func resolvesMorningLegBeforeItsArrival() {
+        let home = SavedLocation(
+            label: .home, address: "Home", coordinate: .init(latitude: 51.5, longitude: -0.1),
+            schedule: PlaceSchedule.defaulted(for: .home)
+        )
+        let work = SavedLocation(
+            label: .work, address: "Work", coordinate: .init(latitude: 51.51, longitude: -0.11),
+            schedule: PlaceSchedule.defaulted(for: .work)
+        )
+        let profile = makeProfile(home: home, work: work)
+
+        let leg = CommuteLegResolver.nextLeg(for: profile, now: date(hour: 7, minute: 30), calendar: calendar)
+        #expect(leg?.destination.label == .work)
+    }
+}
+
 struct CommuteTravelTimeEstimatorTests {
     @Test func prefersCustomRouteDuration() {
         let home = SavedLocation(
