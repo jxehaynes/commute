@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct CommuteWidgetsBundle: WidgetBundle {
     var body: some Widget {
+        CommuteNextCommuteWidget()
         CommuteLiveActivityWidget()
     }
 }

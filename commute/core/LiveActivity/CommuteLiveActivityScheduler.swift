@@ -1,6 +1,7 @@
 import ActivityKit
 import CommuteKit
 import Foundation
+import WidgetKit
 
 enum CommuteLiveActivityTiming {
     static let preMonitoringLead: TimeInterval = 60 * 60
@@ -83,6 +84,8 @@ final class CommuteLiveActivityScheduler {
     /// Single orchestration entry point for foreground, background, and launch.
     @discardableResult
     func runCommuteCheck(profile: UserProfile, now: Date = .now, calendar: Calendar = .current) async -> Date? {
+        await updateWidgetSnapshot(profile: profile, now: now, calendar: calendar)
+
         guard profile.enableLiveActivities else { return nil }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return nil }
         guard let leg = CommuteLegResolver.nextLeg(for: profile, now: now, calendar: calendar) else {
@@ -257,6 +260,38 @@ final class CommuteLiveActivityScheduler {
         )
 
         await activity.update(.init(state: state, staleDate: leg.arriveBy.addingTimeInterval(15 * 60)))
+    }
+
+    /// Keeps the home-screen widget's snapshot in sync with the user's next
+    /// scheduled commute, independent of Live Activity authorization/settings.
+    private func updateWidgetSnapshot(profile: UserProfile, now: Date, calendar: Calendar) async {
+        guard let leg = CommuteLegResolver.nextLeg(for: profile, now: now, calendar: calendar) else {
+            CommuteWidgetStore.clear()
+            WidgetCenter.shared.reloadTimelines(ofKind: CommuteWidgetKind.nextCommute)
+            return
+        }
+
+        let estimate = await CommuteTravelTimeEstimator.estimate(
+            for: profile,
+            leg: leg,
+            routeProvider: routeProvider,
+            disruptionProvider: disruptionProvider
+        )
+        let leaveBy = CommuteLiveActivityTiming.leaveByDate(arriveBy: leg.arriveBy, travelMinutes: estimate.totalMinutes)
+
+        CommuteWidgetStore.save(
+            CommuteWidgetSnapshot(
+                destinationLabel: leg.destination.displayName,
+                destinationIcon: leg.destination.label == .work ? "briefcase.fill" : "house.fill",
+                accent: LiveActivityAccent(accentStyle: profile.accentStyle),
+                leaveByDate: leaveBy,
+                arriveByDate: leg.arriveBy,
+                etaMinutes: estimate.totalMinutes,
+                routeSteps: estimate.routeSteps,
+                updatedAt: now
+            )
+        )
+        WidgetCenter.shared.reloadTimelines(ofKind: CommuteWidgetKind.nextCommute)
     }
 
     private func activeActivity() -> Activity<CommuteLiveActivityAttributes>? {
